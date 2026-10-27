@@ -1,0 +1,11 @@
+# Prompt: continue the AKM Luxury Shoes store (session 3)
+
+Work in the existing codebase. Read STATUS.md first (it is accurate as of the end of session 2), then CONTINUE_PROMPT.md (the original brief, all rules still hold), then the code. Do not re-scaffold. This is Next.js 16: read the relevant guide in node_modules/next/dist/docs/ before writing Next code; use proxy.ts; cacheComponents is on.
+
+Setup: `npm ci`; start Postgres 16 (trust auth on localhost); `npm test` must show 65/65 before you change anything. For running the app: `POSTGREST_BIN=<postgrest v12 binary> bash scripts/local-backend/start.sh`, then export the keys from `node scripts/local-backend/jwt.mjs`, NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321, NEXT_PUBLIC_SITE_URL=http://localhost:3000. The gateway MOCKS Supabase Auth/Storage: never claim real auth/MFA/storage was verified.
+
+Step 0 — verify what already exists before building more (open every page in Playwright at 360px and desktop, screenshot, fix what is broken): home, shop filters/sort/pagination, product page + size/stock + sticky bar, search suggestions, wishlist, mini cart, cart, checkout (COD, InstaPay with receipt upload, card-not-configured message), confirmation, tracking. Check cart/checkout/payment/confirmation have zero animations/transitions/popups/timers. Build the /design preview page.
+
+Then, in this order, finish: (3) Admin, (4) Bulk + CSV, (5) Promotions engine, (6) SEO + legal drafts, (7) Security hardening + security tests, (8) Playwright E2E + Lighthouse, (9) Docs + security report — exactly as specified in CONTINUE_PROMPT.md. Notes: do the promotions migration (0007+) so that storefront_products, `_price_cart`, cart, checkout and the saved order share one pricing function; unit-level offers = best single offer per unit, bundles/buy-X-get-Y are cart-level and beat (never stack on) unit offers, coupon applies to the post-offer subtotal and only stacks if flagged; release coupon use when an order is cancelled; make is_admin() require aal2.
+
+Rules: report only what you ran; list what was not verified. Replace the stand-in logo if the real file is provided. Ask at most three questions, only if blocked; otherwise decide and document.

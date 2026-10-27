@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/* ---------- AKM design tokens ----------
+   Brand: teal #1395A4 / #209AA9, ink #0B1F23, sand #F3EEE6, white.
+   #1395A4 on white is only 3.6:1, so text/buttons use the deeper teal-600/700 (4.9:1 / 6.1:1). */
+@theme {
+  --color-teal: #1395a4;
+  --color-teal-2: #209aa9;
+  --color-teal-600: #0e7c89;
+  --color-teal-700: #0b6c78;
+  --color-teal-50: #e6f4f6;
+  --color-ink: #0b1f23;
+  --color-ink-2: #1a3338;
+  --color-muted: #586769;
+  --color-sand: #f3eee6;
+  --color-sand-2: #e8e1d4;
+  --color-line: #d9d2c3;
+  --color-danger: #b42318;
+  --color-danger-50: #fdecea;
+  --color-ok: #0a6b4b;
+  --color-ok-50: #e3f4ec;
+  --color-warn: #8a5a00;
+  --color-warn-50: #fff3d6;
+  /* Sky + lime: the "Aeline" look */
+  --color-sky: #1e8be0;
+  --color-sky-2: #5fb6f2;
+  --color-sky-3: #bfe3fb;
+  --color-lime: #d4fb52;
+  --color-lime-2: #c2ee3a;
+  --color-mist: #f1f1f1;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-display: var(--font-gloock), var(--font-fraunces), ui-serif, serif;
+
+  --radius-card: 14px;
+  --shadow-card: 0 1px 2px rgb(11 31 35 / 0.06), 0 6px 20px rgb(11 31 35 / 0.06);
+
+  --animate-marquee: marquee 38s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-drift: drift 90s linear infinite;
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes drift { from { transform: translateX(0); } to { transform: translateX(-12%); } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+html { background: var(--color-sand); color: var(--color-ink); -webkit-text-size-adjust: 100%; }
+body { font-family: var(--font-sans); background: var(--color-sand); min-height: 100dvh; display: flex; flex-direction: column; }
+h1, h2, h3 { font-family: var(--font-serif); letter-spacing: -0.01em; }
+:focus-visible { outline: 3px solid var(--color-teal-600); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--color-teal); color: #fff; }
+img { max-width: 100%; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---------- sky hero ---------- */
+.sky {
+  background:
+    radial-gradient(60% 40% at 15% 78%, rgb(255 255 255 / .9) 0, transparent 70%),
+    radial-gradient(50% 35% at 85% 85%, rgb(255 255 255 / .85) 0, transparent 70%),
+    radial-gradient(40% 25% at 50% 100%, rgb(255 255 255 / .95) 0, transparent 70%),
+    radial-gradient(30% 20% at 8% 45%, rgb(255 255 255 / .55) 0, transparent 70%),
+    radial-gradient(30% 20% at 95% 55%, rgb(255 255 255 / .5) 0, transparent 70%),
+    linear-gradient(180deg, #1583dc 0%, #2f9bea 45%, #7cc4f5 100%);
+}
+.fan { perspective: 1400px; }
+.fan > li { transform: rotateY(var(--ry, 0deg)) translateY(var(--ty, 0)) scale(var(--sc, 1)); transform-style: preserve-3d; }
+.mono { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+.display-tight { letter-spacing: -0.045em; line-height: .98; font-weight: 500; }
+
+/* Reserve space for the mobile bottom nav so it never covers content. */
+.has-bottom-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom)); }
+@media (min-width: 1024px) { .has-bottom-nav { padding-bottom: 0; } }
+
+/* ---------- motion policy ----------
+   Homepage/storefront: lightweight CSS-only animation. Disabled for users who ask for reduced motion.
+   Cart / checkout / payment / confirmation: wrapped in [data-flow] → NO animation or transition at all. */
+.reveal { animation: var(--animate-rise); }
+@supports (animation-timeline: view()) {
+  .reveal-scroll { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 35%; }
+}
+.skeleton { background: linear-gradient(100deg, var(--color-sand-2) 30%, #fbf8f2 50%, var(--color-sand-2) 70%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 10px; }
+.drawer-anim { animation: drawer-in 0.22s ease-out; }
+.sheet-anim { animation: sheet-in 0.22s ease-out; }
+.hover-lift { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+.hover-lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+[data-flow], [data-flow] *, [data-flow] *::before, [data-flow] *::after {
+  animation: none !important; transition: none !important; scroll-behavior: auto !important;
+}
+dialog::backdrop { background: rgb(11 31 35 / 0.55); }
+[data-flow] dialog::backdrop { transition: none; }
+
+@media print {
+  header, footer, nav, .no-print { display: none !important; }
+  body { background: #fff; }
+}
