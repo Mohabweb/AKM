@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { json } from "@/lib/api";
+import { dbError, failJson, json } from "@/lib/api";
 import { allow, clientIp } from "@/lib/rate-limit";
 import { serviceClient } from "@/lib/supabase/service";
 import { orderNumberSchema, phoneSchema } from "@/lib/validation";
@@ -17,17 +17,29 @@ function sniff(b: Uint8Array): { ext: string; mime: string } | null {
 
 export async function POST(req: Request) {
   const ip = await clientIp();
-  if (!(await allow("receipt-ip", ip, 3600, 10))) return json({ error: "Too many uploads. Please try again later." }, 429);
-  if (Number(req.headers.get("content-length") ?? 0) > MAX + 10_000) return json({ error: "File is too large (max 5 MB)." }, 413);
+  if (!(await allow("receipt-ip", ip, 3600, 10))) {
+    return failJson("receipt", { status: 429, kind: "rate_limit", code: "RATE_LIMIT", error: "Too many uploads. Please try again later." });
+  }
+  if (Number(req.headers.get("content-length") ?? 0) > MAX + 10_000) {
+    return failJson("receipt", { status: 413, kind: "validation", code: "VALIDATION", error: "File is too large (max 5 MB)." });
+  }
 
   let form: FormData;
   try { form = await req.formData(); } catch { return json({ error: "Invalid upload." }, 400); }
   const num = orderNumberSchema.safeParse(form.get("orderNumber"));
   const phone = phoneSchema.safeParse(form.get("phone"));
   const file = form.get("file");
-  if (!num.success || !phone.success || !(file instanceof File)) return json({ error: "Missing order number, phone or file." }, 400);
-  if (file.size === 0 || file.size > MAX) return json({ error: "File must be an image under 5 MB." }, 413);
-  if (!(await allow("receipt-order", num.data, 3600, 5))) return json({ error: "Too many uploads for this order." }, 429);
+  if (!num.success || !phone.success || !(file instanceof File)) {
+    return failJson("receipt", { status: 400, kind: "validation", code: "VALIDATION", error: "Missing order number, phone or file." }, {
+      order: num.success, phone: phone.success, file: file instanceof File,
+    });
+  }
+  if (file.size === 0 || file.size > MAX) {
+    return failJson("receipt", { status: 413, kind: "validation", code: "VALIDATION", error: "File must be an image under 5 MB." });
+  }
+  if (!(await allow("receipt-order", num.data, 3600, 5))) {
+    return failJson("receipt", { status: 429, kind: "rate_limit", code: "RATE_LIMIT", error: "Too many uploads for this order." });
+  }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const kind = sniff(bytes);
@@ -41,11 +53,15 @@ export async function POST(req: Request) {
 
   const path = `${order.id}/${randomUUID()}.${kind.ext}`; // random name; the bucket is private
   const up = await sb.storage.from("instapay-receipts").upload(path, bytes, { contentType: kind.mime, upsert: false });
-  if (up.error) return json({ error: "Upload failed. Please try again." }, 500);
+  if (up.error) {
+    return failJson("receipt", { status: 500, kind: "server", code: "ERROR", error: "Upload failed. Please try again." }, up.error.message);
+  }
   const { error } = await sb.rpc("attach_receipt", { p_order: order.id, p_path: path });
   if (error) {
     await sb.storage.from("instapay-receipts").remove([path]);
-    return json({ error: error.message.includes("AKM_RECEIPT_NOT_ALLOWED") ? "This order can't accept a receipt right now." : "Upload failed. Please try again." }, 409);
+    const e = dbError(error.message);
+    if (e.code === "ERROR") e.error = "Upload failed. Please try again.";
+    return failJson("receipt", e, { supabase: error.message, code: error.code });
   }
   return json({ ok: true });
 }

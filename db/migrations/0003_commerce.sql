@@ -1,8 +1,10 @@
 -- 0003_commerce.sql — orders, order_items, payments, instapay_receipts, order_events
 
 -- Public order number like AKM-7K3Q9F. Alphabet excludes I, L, O, U to avoid look-alikes.
+-- search_path includes `extensions` so this works on hosted Supabase (pgcrypto lives there,
+-- and create_order's own search_path is `public` only). Missing schemas are ignored.
 create or replace function public.gen_order_number() returns text
-language plpgsql volatile as $$
+language plpgsql volatile set search_path = public, extensions, pg_catalog as $$
 declare
   alphabet constant text := '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
   bytes bytea;

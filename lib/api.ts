@@ -1,23 +1,51 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import type { ZodError } from "zod";
+import { describeDbFailure, logDetail, type ApiFail, type DbFailure, type FailKind } from "@/lib/api-errors";
 
-export const json = (body: unknown, status = 200) =>
-  NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+export type { ApiFail, FailKind };
 
-/** Maps database error codes (raised by the SQL functions) to safe, human messages. Never leaks internals. */
-export function dbError(message: string): { status: number; error: string; code: string } {
-  const m = message.match(/AKM_[A-Z_]+/)?.[0] ?? "";
-  switch (m) {
-    case "AKM_OUT_OF_STOCK": return { status: 409, code: m, error: "Some items are no longer available in the quantity you chose. Please review your cart." };
-    case "AKM_UNAVAILABLE": return { status: 409, code: m, error: "An item in your cart is no longer available." };
-    case "AKM_COUPON_INVALID": return { status: 422, code: m, error: "That coupon can't be applied to this order." };
-    case "AKM_BAD_GOVERNORATE": return { status: 422, code: m, error: "Please choose a valid governorate." };
-    case "AKM_PAYMENT_DISABLED": return { status: 422, code: m, error: "That payment method isn't available right now." };
-    case "AKM_BAD_QTY": return { status: 422, code: m, error: "Invalid quantity." };
-    case "AKM_EMPTY_CART": return { status: 422, code: m, error: "Your cart is empty." };
-    case "AKM_RETRY": return { status: 503, code: m, error: "Please try again." };
-    default: return { status: 500, code: "ERROR", error: "Something went wrong. Please try again." };
-  }
+export const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+  NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
+
+function logFail(scope: string, fail: ApiFail & { reason?: string }, detail?: unknown) {
+  const reason = "reason" in fail && fail.reason ? ` reason=${fail.reason}` : "";
+  const at = new Date().toISOString();
+  // One line per failure, on stderr, with the cause the operator needs. No customer PII: callers pass logDetail().
+  console.error(
+    `[${scope}] FAIL kind=${fail.kind} code=${fail.code}${reason} status=${fail.status} at=${at} :: ${fail.error}` +
+      (detail === undefined ? "" : ` detail=${JSON.stringify(detail)}`),
+  );
+}
+
+export function failJson(scope: string, fail: ApiFail & { reason?: string }, detail?: unknown, headers?: Record<string, string>) {
+  logFail(scope, fail, detail);
+  return json({ error: fail.error, code: fail.code, kind: fail.kind }, fail.status, headers);
+}
+
+export function validationFail(scope: string, error: ZodError, fallback = "Please check the highlighted fields.", headers?: Record<string, string>): Response {
+  const first = error.issues[0];
+  const field = first?.path.filter((p) => typeof p === "string" || typeof p === "number").join(".") || undefined;
+  const message = first?.message ?? fallback;
+  return failJson(
+    scope,
+    { status: 400, kind: "validation", code: "VALIDATION", error: message },
+    { field, issues: error.issues.map((i) => ({ path: i.path, message: i.message })) },
+    headers,
+  );
+}
+
+/**
+ * Maps a Supabase/Postgres error to a safe customer message plus a precise server-side reason.
+ * Accepts either an error object ({ message, code, details, hint }) or a bare message string.
+ */
+export function dbError(error: unknown): DbFailure {
+  return describeDbFailure(error);
+}
+
+/** Logs a database failure with its classified reason and returns the safe response. */
+export function dbFailJson(scope: string, error: unknown, extra?: Record<string, unknown>, headers?: Record<string, string>): Response {
+  return failJson(scope, describeDbFailure(error), { ...logDetail(error), ...extra }, headers);
 }
 
 export async function readJson(req: Request, maxBytes = 20_000): Promise<unknown | null> {

@@ -16,10 +16,19 @@ type Opts = { cod: boolean; instapay: boolean; card: boolean; cardConfigured: bo
 type Errs = Partial<Record<"customerName" | "phone" | "governorateId" | "city" | "area" | "address" | "landmark" | "paymentMethod" | "form", string>>;
 
 const IDEM = "akm.idem.v1";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** One key per checkout attempt: created once, reused for retries (so a double-click or lost response can never create two orders),
  *  and cleared only after the order is confirmed. */
 function attemptKey(): string {
-  try { const k = sessionStorage.getItem(IDEM); if (k) return k; const n = crypto.randomUUID(); sessionStorage.setItem(IDEM, n); return n; } catch { return crypto.randomUUID(); }
+  try {
+    const k = sessionStorage.getItem(IDEM);
+    if (k && UUID.test(k)) return k;
+    const n = crypto.randomUUID();
+    sessionStorage.setItem(IDEM, n);
+    return n;
+  } catch {
+    return crypto.randomUUID();
+  }
 }
 
 export function CheckoutForm({ zones, options, instapayNumber }: { zones: Zone[]; options: Opts; instapayNumber: string }) {
@@ -61,6 +70,7 @@ export function CheckoutForm({ zones, options, instapayNumber }: { zones: Zone[]
 
     setBusy(true);
     try {
+      if (!key.current) key.current = attemptKey();
       const res = await fetch("/api/checkout", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({

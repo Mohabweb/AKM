@@ -228,3 +228,103 @@ describe("every public table has RLS enabled", () => {
     expect(rows).toEqual([]);
   });
 });
+
+describe("is_admin() requires aal2", () => {
+  it("denies admin access to staff/owner when session is only aal1", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal1" }, async (c) => {
+      // is_admin() should return false
+      const { rows } = await c.query("select public.is_admin() as is_admin, public.is_owner() as is_owner");
+      expect(rows[0].is_admin).toBe(false);
+      expect(rows[0].is_owner).toBe(false);
+
+      // Orders and draft products blocked by RLS
+      expect((await c.query("select * from public.orders")).rowCount).toBe(0);
+      expect((await c.query("select * from public.products where status='draft'")).rowCount).toBe(0);
+
+      // Admin functions fail with AKM_FORBIDDEN
+      expect(await fails(c, "select public.set_order_status(gen_random_uuid(), 'paid')")).toMatch(/AKM_FORBIDDEN/);
+      expect(await fails(c, "select public.set_order_internal_notes(gen_random_uuid(), 'note')")).toMatch(/AKM_FORBIDDEN/);
+    });
+
+    await as({ role: "authenticated", sub: owner, aal: "aal1" }, async (c) => {
+      const { rows } = await c.query("select public.is_admin() as is_admin, public.is_owner() as is_owner");
+      expect(rows[0].is_admin).toBe(false);
+      expect(rows[0].is_owner).toBe(false);
+      expect((await c.query("select * from public.audit_log")).rowCount).toBe(0);
+      expect(await fails(c, "select public.delete_demo_data()")).toMatch(/AKM_FORBIDDEN/);
+    });
+  });
+
+  it("grants admin access when session is aal2", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      const { rows } = await c.query("select public.is_admin() as is_admin, public.is_owner() as is_owner");
+      expect(rows[0].is_admin).toBe(true);
+      expect(rows[0].is_owner).toBe(false);
+      expect((await c.query("select * from public.products where status='draft'")).rowCount).toBeGreaterThan(0);
+    });
+
+    await as({ role: "authenticated", sub: owner, aal: "aal2" }, async (c) => {
+      const { rows } = await c.query("select public.is_admin() as is_admin, public.is_owner() as is_owner");
+      expect(rows[0].is_admin).toBe(true);
+      expect(rows[0].is_owner).toBe(true);
+    });
+  });
+
+  it("still denies non-admin even if they claim aal2", async () => {
+    await as({ role: "authenticated", sub: customer, aal: "aal2" }, async (c) => {
+      const { rows } = await c.query("select public.is_admin() as is_admin, public.is_owner() as is_owner");
+      expect(rows[0].is_admin).toBe(false);
+      expect(rows[0].is_owner).toBe(false);
+      expect((await c.query("select * from public.orders")).rowCount).toBe(0);
+    });
+  });
+});
+
+describe("staff strictly cannot do owner actions", () => {
+  it("cannot modify store settings", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      const res = await c.query("update public.settings set value='\"new_val\"' where key='store_name'");
+      expect(res.rowCount).toBe(0);
+    });
+  });
+
+  it("cannot create or modify coupons", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      expect(await fails(c, "insert into public.coupons (code,type,value) values ('STAFFFAIL','percent',10)")).toMatch(/row-level security/);
+    });
+  });
+
+  it("cannot modify shipping fees", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      const res = await c.query("update public.shipping_zones set fee_piasters = 9999 where governorate='Cairo'");
+      expect(res.rowCount).toBe(0);
+    });
+  });
+
+  it("cannot read or write audit logs", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      expect((await c.query("select * from public.audit_log")).rowCount).toBe(0);
+    });
+  });
+
+  it("cannot manage staff accounts or promote themselves to owner", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      expect(await fails(c, "update public.admin_users set role='owner' where user_id=$1", [staff])).toMatch(/row-level security/);
+      expect(await fails(c, "insert into public.admin_users (user_id,email,role) values (gen_random_uuid(),'new@staff','staff')")).toMatch(/row-level security/);
+    });
+  });
+
+  it("cannot delete products", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      const res = await c.query("delete from public.products where slug=$1", [draftSlug]);
+      expect(res.rowCount).toBe(0);
+    });
+  });
+
+  it("cannot invoke delete_demo_data", async () => {
+    await as({ role: "authenticated", sub: staff, aal: "aal2" }, async (c) => {
+      expect(await fails(c, "select public.delete_demo_data()")).toMatch(/AKM_FORBIDDEN/);
+    });
+  });
+});
+

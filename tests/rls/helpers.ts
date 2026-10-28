@@ -7,10 +7,19 @@ export const DB = "akm_test";
 export const URL = `${BASE}/${DB}`;
 
 export function resetDb() {
-  execFileSync(path.resolve(__dirname, "../../scripts/db-reset.sh"), [DB], {
-    env: { ...process.env, DATABASE_URL: BASE },
-    stdio: "pipe",
-  });
+  const script = path.resolve(__dirname, "../../scripts/db-reset.sh");
+  if (process.platform === "win32") {
+    const gitBash = "C:\\Program Files\\Git\\bin\\bash.exe";
+    execFileSync(gitBash, [script, DB], {
+      env: { ...process.env, DATABASE_URL: BASE },
+      stdio: "pipe",
+    });
+  } else {
+    execFileSync(script, [DB], {
+      env: { ...process.env, DATABASE_URL: BASE },
+      stdio: "pipe",
+    });
+  }
 }
 
 export async function connect(): Promise<Client> {
@@ -19,7 +28,7 @@ export async function connect(): Promise<Client> {
   return c;
 }
 
-export type Actor = { role: "anon" | "authenticated" | "service_role"; sub?: string };
+export type Actor = { role: "anon" | "authenticated" | "service_role"; sub?: string; aal?: "aal1" | "aal2" };
 
 const inTx = new WeakSet<Client>();
 
@@ -33,7 +42,14 @@ export async function as<T>(actor: Actor, fn: (c: Client) => Promise<T>, opts: {
   try {
     await c.query("begin");
     await c.query(`set local role ${actor.role}`);
-    if (actor.sub) await c.query("select set_config('request.jwt.claim.sub', $1, true)", [actor.sub]);
+    if (actor.sub) {
+      await c.query("select set_config('request.jwt.claim.sub', $1, true)", [actor.sub]);
+      const aal = actor.aal ?? "aal2";
+      await c.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
+      await c.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: actor.sub, aal, role: actor.role }),
+      ]);
+    }
     const out = await fn(c);
     if (opts.commit) await c.query("commit");
     return out;
